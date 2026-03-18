@@ -274,6 +274,81 @@ defmodule ReqLLM.Streaming.FinchClientTest do
     end
   end
 
+  describe "req_headers option" do
+    defmodule MockStreamServerForHeaders do
+      use GenServer
+
+      def start_link do
+        GenServer.start_link(__MODULE__, [])
+      end
+
+      def init(_), do: {:ok, []}
+
+      def handle_call({:http_event, _event}, _from, state) do
+        {:reply, :ok, state}
+      end
+    end
+
+    test "appends extra headers to the finch request" do
+      {:ok, stream_server} = MockStreamServerForHeaders.start_link()
+      {:ok, model} = ReqLLM.model("openai:gpt-4")
+      {:ok, context} = Context.normalize("Test")
+
+      {:ok, _task_pid, http_context, _canonical_json} =
+        FinchClient.start_stream(
+          ReqLLM.Providers.OpenAI,
+          model,
+          context,
+          [req_headers: [{"x-trace-id", "abc123"}, {"x-custom", "value"}]],
+          stream_server
+        )
+
+      assert http_context.req_headers["x-trace-id"] == "abc123"
+      assert http_context.req_headers["x-custom"] == "value"
+    end
+
+    test "does not affect request when req_headers is absent" do
+      {:ok, stream_server} = MockStreamServerForHeaders.start_link()
+      {:ok, model} = ReqLLM.model("openai:gpt-4")
+      {:ok, context} = Context.normalize("Test")
+
+      {:ok, _task_pid, http_context_without, _} =
+        FinchClient.start_stream(ReqLLM.Providers.OpenAI, model, context, [], stream_server)
+
+      {:ok, stream_server2} = MockStreamServerForHeaders.start_link()
+
+      {:ok, _task_pid, http_context_empty, _} =
+        FinchClient.start_stream(
+          ReqLLM.Providers.OpenAI,
+          model,
+          context,
+          [req_headers: []],
+          stream_server2
+        )
+
+      assert http_context_without.req_headers == http_context_empty.req_headers
+    end
+
+    test "extra headers do not override existing provider headers" do
+      {:ok, stream_server} = MockStreamServerForHeaders.start_link()
+      {:ok, model} = ReqLLM.model("openai:gpt-4")
+      {:ok, context} = Context.normalize("Test")
+
+      {:ok, _task_pid, http_context, _} =
+        FinchClient.start_stream(
+          ReqLLM.Providers.OpenAI,
+          model,
+          context,
+          [req_headers: [{"x-extra", "appended"}]],
+          stream_server
+        )
+
+      # Provider-set headers like content-type should still be present
+      assert http_context.req_headers["content-type"] == "application/json"
+      assert http_context.req_headers["x-extra"] == "appended"
+    end
+  end
+
   describe "safe_http_event/2 graceful termination handling" do
     defmodule TerminatingStreamServer do
       use GenServer

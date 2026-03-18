@@ -71,6 +71,7 @@ defmodule ReqLLM.Streaming do
     * `:metadata_timeout` - Metadata collection timeout in milliseconds (default: 300_000)
     * `:fixture_path` - Path for test fixture capture (testing only)
     * `:finch_name` - Finch pool name (default: ReqLLM.Finch)
+    * `:req_headers` - List of `{name, value}` tuples to append to the Finch request headers
 
   ## Examples
 
